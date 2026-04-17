@@ -502,25 +502,25 @@ export async function handleOpenAiHttpRequest(
   opts: OpenAiHttpOptions,
 ): Promise<boolean> {
   const limits = resolveOpenAiChatCompletionsLimits(opts.config);
- 
+
   // Support for Xcode Copilot Extension (#2201). 
   // Xcode uses the legacy path '/v1/engines/copilot-codex/completions'.
 
-const isSupportedPath = 
-  req.url?.startsWith("/v1/chat/completions") || 
-  req.url?.startsWith("/v1/engines/copilot-codex/completions");
+  const isSupportedPath =
+    req.url?.startsWith("/v1/chat/completions") ||
+    req.url?.startsWith("/v1/engines/copilot-codex/completions");
 
-const handled = await handleGatewayPostJsonEndpoint(req, res, {
-  // Use the actual request URL if it's one of our supported ones
-  pathname: isSupportedPath ? req.url!.split('?')[0] : "/v1/chat/completions",
-  requiredOperatorMethod: "chat.send",
-  resolveOperatorScopes: resolveOpenAiCompatibleHttpOperatorScopes,
-  auth: opts.auth,
-  trustedProxies: opts.trustedProxies,
-  allowRealIpFallback: opts.allowRealIpFallback,
-  rateLimiter: opts.rateLimiter,
-  maxBodyBytes: opts.maxBodyBytes ?? limits.maxBodyBytes,
-});
+  const handled = await handleGatewayPostJsonEndpoint(req, res, {
+    // Use the actual request URL if it's one of our supported ones
+    pathname: isSupportedPath ? req.url!.split('?')[0] : "/v1/chat/completions",
+    requiredOperatorMethod: "chat.send",
+    resolveOperatorScopes: resolveOpenAiCompatibleHttpOperatorScopes,
+    auth: opts.auth,
+    trustedProxies: opts.trustedProxies,
+    allowRealIpFallback: opts.allowRealIpFallback,
+    rateLimiter: opts.rateLimiter,
+    maxBodyBytes: opts.maxBodyBytes ?? limits.maxBodyBytes,
+  });
   if (handled === false) {
     return false;
   }
@@ -532,15 +532,13 @@ const handled = await handleGatewayPostJsonEndpoint(req, res, {
   const senderIsOwner = resolveOpenAiCompatibleHttpSenderIsOwner(req, handled.requestAuth);
 
   const payload = coerceRequest(handled.body);
-  /** * Xcode Bridge:
-   * The Xcode Copilot extension sends a plain 'prompt' string (Codex style) 
-   * instead of the standard OpenAI 'messages' array. We normalize it here 
-   * to ensure compatibility with OpenClaw's internal message processing.
-   * Reference: Issue #2201
+  /**
+   * XCODE BRIDGE LOGIC:
+   * Xcode sends a single 'prompt' string. We wrap it for the internal agent.
    */
-  const legacyPayload = payload as any;
-  if (legacyPayload.prompt && !payload.messages) {
-    payload.messages = [{ role: "user", content: String(legacyPayload.prompt) }];
+  const rawPayload = payload as { prompt?: unknown; messages?: unknown };
+  if (rawPayload.prompt && !payload.messages) {
+    payload.messages = [{ role: "user", content: String(rawPayload.prompt) }];
   }
   const stream = Boolean(payload.stream);
   const streamIncludeUsage = stream && resolveIncludeUsageForStreaming(payload);
@@ -656,14 +654,14 @@ const handled = await handleGatewayPostJsonEndpoint(req, res, {
   let sawAssistantDelta = false;
   let finalUsage:
     | {
-        prompt_tokens: number;
-        completion_tokens: number;
-        total_tokens: number;
-      }
+      prompt_tokens: number;
+      completion_tokens: number;
+      total_tokens: number;
+    }
     | undefined;
   let finalizeRequested = false;
   let closed = false;
-  let stopWatchingDisconnect = () => {};
+  let stopWatchingDisconnect = () => { };
 
   const maybeFinalize = () => {
     if (closed || !finalizeRequested) {

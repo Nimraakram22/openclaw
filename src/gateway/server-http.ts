@@ -230,9 +230,11 @@ function isEmbeddingsPath(pathname: string): boolean {
 }
 
 function isOpenAiChatCompletionsPath(pathname: string): boolean {
-  return pathname === "/v1/chat/completions";
+  return (
+    pathname === "/v1/chat/completions" || 
+    pathname === "/v1/engines/copilot-codex/completions"
+  );
 }
-
 function isOpenResponsesPath(pathname: string): boolean {
   return pathname === "/v1/responses";
 }
