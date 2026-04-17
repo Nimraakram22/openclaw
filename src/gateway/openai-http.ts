@@ -502,18 +502,25 @@ export async function handleOpenAiHttpRequest(
   opts: OpenAiHttpOptions,
 ): Promise<boolean> {
   const limits = resolveOpenAiChatCompletionsLimits(opts.config);
-  const handled = await handleGatewayPostJsonEndpoint(req, res, {
-    pathname: "/v1/chat/completions",
-    requiredOperatorMethod: "chat.send",
-    // Compat HTTP uses a different scope model from generic HTTP helpers:
-    // shared-secret bearer auth is treated as full operator access here.
-    resolveOperatorScopes: resolveOpenAiCompatibleHttpOperatorScopes,
-    auth: opts.auth,
-    trustedProxies: opts.trustedProxies,
-    allowRealIpFallback: opts.allowRealIpFallback,
-    rateLimiter: opts.rateLimiter,
-    maxBodyBytes: opts.maxBodyBytes ?? limits.maxBodyBytes,
-  });
+ 
+  // Support for Xcode Copilot Extension (#2201). 
+  // Xcode uses the legacy path '/v1/engines/copilot-codex/completions'.
+
+const isSupportedPath = 
+  req.url?.startsWith("/v1/chat/completions") || 
+  req.url?.startsWith("/v1/engines/copilot-codex/completions");
+
+const handled = await handleGatewayPostJsonEndpoint(req, res, {
+  // Use the actual request URL if it's one of our supported ones
+  pathname: isSupportedPath ? req.url!.split('?')[0] : "/v1/chat/completions",
+  requiredOperatorMethod: "chat.send",
+  resolveOperatorScopes: resolveOpenAiCompatibleHttpOperatorScopes,
+  auth: opts.auth,
+  trustedProxies: opts.trustedProxies,
+  allowRealIpFallback: opts.allowRealIpFallback,
+  rateLimiter: opts.rateLimiter,
+  maxBodyBytes: opts.maxBodyBytes ?? limits.maxBodyBytes,
+});
   if (handled === false) {
     return false;
   }
@@ -525,6 +532,16 @@ export async function handleOpenAiHttpRequest(
   const senderIsOwner = resolveOpenAiCompatibleHttpSenderIsOwner(req, handled.requestAuth);
 
   const payload = coerceRequest(handled.body);
+  /** * Xcode Bridge:
+   * The Xcode Copilot extension sends a plain 'prompt' string (Codex style) 
+   * instead of the standard OpenAI 'messages' array. We normalize it here 
+   * to ensure compatibility with OpenClaw's internal message processing.
+   * Reference: Issue #2201
+   */
+  const legacyPayload = payload as any;
+  if (legacyPayload.prompt && !payload.messages) {
+    payload.messages = [{ role: "user", content: String(legacyPayload.prompt) }];
+  }
   const stream = Boolean(payload.stream);
   const streamIncludeUsage = stream && resolveIncludeUsageForStreaming(payload);
   const model = typeof payload.model === "string" ? payload.model : "openclaw";
