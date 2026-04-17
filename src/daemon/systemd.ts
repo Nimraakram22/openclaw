@@ -640,8 +640,13 @@ export async function restartSystemdService({
     action: "restart",
     label: "Restarted systemd service",
   });
+  // FIX #68109: Ensure success exit code is set for systemd automation
+  process.exitCode = 0;
+
   return { outcome: "completed" };
+
 }
+  
 
 export async function isSystemdServiceEnabled(args: GatewayServiceEnvArgs): Promise<boolean> {
   const env = args.env ?? process.env;
