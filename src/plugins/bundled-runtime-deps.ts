@@ -1,11 +1,13 @@
 import { spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
 import fs from "node:fs";
+import { Module } from "node:module";
 import os from "node:os";
 import path from "node:path";
 import { resolveStateDir } from "../config/paths.js";
 import type { OpenClawConfig } from "../config/types.openclaw.js";
 import { resolveHomeRelativePath } from "../infra/home-dir.js";
+import { createNpmProjectInstallEnv } from "../infra/npm-install-env.js";
 import { normalizeOptionalLowercaseString } from "../shared/string-coerce.js";
 import { normalizePluginsConfig } from "./config-state.js";
 import { satisfies, validRange, validSemver } from "./semver.runtime.js";
@@ -55,6 +57,8 @@ const BUNDLED_RUNTIME_DEPS_LOCK_WAIT_MS = 100;
 const BUNDLED_RUNTIME_DEPS_LOCK_TIMEOUT_MS = 5 * 60_000;
 const BUNDLED_RUNTIME_DEPS_LOCK_STALE_MS = 10 * 60_000;
 const BUNDLED_RUNTIME_DEPS_OWNERLESS_LOCK_STALE_MS = 30_000;
+
+const registeredBundledRuntimeDepNodePaths = new Set<string>();
 
 export type BundledRuntimeDepsNpmRunner = {
   command: string;
@@ -440,6 +444,43 @@ function resolveBundledPluginPackageRoot(pluginRoot: string): string | null {
   return path.dirname(buildDir);
 }
 
+export function resolveBundledRuntimeDependencyPackageRoot(pluginRoot: string): string | null {
+  return resolveBundledPluginPackageRoot(pluginRoot);
+}
+
+export function registerBundledRuntimeDependencyNodePath(rootDir: string): void {
+  const nodeModulesDir = path.join(rootDir, "node_modules");
+  if (registeredBundledRuntimeDepNodePaths.has(nodeModulesDir) || !fs.existsSync(nodeModulesDir)) {
+    return;
+  }
+  const currentPaths = (process.env.NODE_PATH ?? "")
+    .split(path.delimiter)
+    .map((entry) => entry.trim())
+    .filter((entry) => entry.length > 0);
+  process.env.NODE_PATH = [
+    nodeModulesDir,
+    ...currentPaths.filter((entry) => entry !== nodeModulesDir),
+  ].join(path.delimiter);
+  (Module as unknown as { _initPaths?: () => void })._initPaths?.();
+  registeredBundledRuntimeDepNodePaths.add(nodeModulesDir);
+}
+
+export function clearBundledRuntimeDependencyNodePaths(): void {
+  if (registeredBundledRuntimeDepNodePaths.size === 0) {
+    return;
+  }
+  const retainedPaths = (process.env.NODE_PATH ?? "")
+    .split(path.delimiter)
+    .filter((entry) => entry.length > 0 && !registeredBundledRuntimeDepNodePaths.has(entry));
+  if (retainedPaths.length > 0) {
+    process.env.NODE_PATH = retainedPaths.join(path.delimiter);
+  } else {
+    delete process.env.NODE_PATH;
+  }
+  registeredBundledRuntimeDepNodePaths.clear();
+  (Module as unknown as { _initPaths?: () => void })._initPaths?.();
+}
+
 function isPackagedBundledPluginRoot(pluginRoot: string): boolean {
   const packageRoot = resolveBundledPluginPackageRoot(pluginRoot);
   return Boolean(packageRoot && !isSourceCheckoutRoot(packageRoot));
@@ -567,9 +608,34 @@ function resolveExternalBundledRuntimeDepsInstallRoot(params: {
   env: NodeJS.ProcessEnv;
 }): string {
   const packageRoot = resolveBundledPluginPackageRoot(params.pluginRoot) ?? params.pluginRoot;
+  const existingExternalRoot = resolveExistingExternalBundledRuntimeDepsRoot({
+    packageRoot,
+    env: params.env,
+  });
+  if (existingExternalRoot) {
+    return existingExternalRoot;
+  }
   const version = sanitizePathSegment(readPackageVersion(packageRoot));
   const packageKey = `openclaw-${version}-${createPathHash(packageRoot)}`;
   return path.join(resolveBundledRuntimeDepsExternalBaseDir(params.env), packageKey);
+}
+
+function resolveExistingExternalBundledRuntimeDepsRoot(params: {
+  packageRoot: string;
+  env: NodeJS.ProcessEnv;
+}): string | null {
+  const externalBaseDir = path.resolve(resolveBundledRuntimeDepsExternalBaseDir(params.env));
+  const packageRoot = path.resolve(params.packageRoot);
+  const relative = path.relative(externalBaseDir, packageRoot);
+  if (
+    relative === "" ||
+    relative.startsWith("..") ||
+    path.isAbsolute(relative) ||
+    relative.includes(path.sep)
+  ) {
+    return null;
+  }
+  return path.basename(packageRoot).startsWith("openclaw-") ? packageRoot : null;
 }
 
 function resolveSourceCheckoutRuntimeDepsCacheDir(params: {
@@ -680,26 +746,13 @@ function storeSourceCheckoutRuntimeDepsCache(params: {
   }
 }
 
-function createNestedNpmInstallEnv(env: NodeJS.ProcessEnv): NodeJS.ProcessEnv {
-  const nextEnv = { ...env };
-  delete nextEnv.NPM_CONFIG_CACHE;
-  delete nextEnv.npm_config_cache;
-  delete nextEnv.npm_config_global;
-  delete nextEnv.npm_config_location;
-  delete nextEnv.npm_config_prefix;
-  return nextEnv;
-}
-
 export function createBundledRuntimeDepsInstallEnv(
   env: NodeJS.ProcessEnv,
   options: { cacheDir?: string } = {},
 ): NodeJS.ProcessEnv {
   return {
-    ...createNestedNpmInstallEnv(env),
+    ...createNpmProjectInstallEnv(env, options),
     npm_config_legacy_peer_deps: "true",
-    npm_config_package_lock: "false",
-    npm_config_save: "false",
-    ...(options.cacheDir ? { npm_config_cache: options.cacheDir } : {}),
   };
 }
 
@@ -1086,6 +1139,17 @@ function shouldCleanBundledRuntimeDepsInstallExecutionRoot(params: {
   return installExecutionRoot.startsWith(`${installRoot}${path.sep}`);
 }
 
+function ensureNpmInstallExecutionManifest(installExecutionRoot: string): void {
+  const manifestPath = path.join(installExecutionRoot, "package.json");
+  if (fs.existsSync(manifestPath)) {
+    return;
+  }
+  fs.writeFileSync(
+    manifestPath,
+    `${JSON.stringify({ name: "openclaw-runtime-deps-install", private: true }, null, 2)}\n`,
+    "utf8",
+  );
+}
 export function installBundledRuntimeDeps(params: {
   installRoot: string;
   installExecutionRoot?: string;
@@ -1104,13 +1168,11 @@ export function installBundledRuntimeDeps(params: {
   try {
     fs.mkdirSync(params.installRoot, { recursive: true });
     fs.mkdirSync(installExecutionRoot, { recursive: true });
-    if (isolatedExecutionRoot) {
-      fs.writeFileSync(
-        path.join(installExecutionRoot, "package.json"),
-        `${JSON.stringify({ name: "openclaw-runtime-deps-install", private: true }, null, 2)}\n`,
-        "utf8",
-      );
-    }
+    // Always make npm see an OpenClaw-owned package root. The package-level
+    // doctor repair path installs directly in the external stage dir; without a
+    // manifest, npm can honor a user's global prefix config and write under
+    // $HOME/node_modules instead of our managed stage.
+    ensureNpmInstallExecutionManifest(installExecutionRoot);
     const installEnv = createBundledRuntimeDepsInstallEnv(params.env, {
       cacheDir: path.join(installExecutionRoot, ".openclaw-npm-cache"),
     });
