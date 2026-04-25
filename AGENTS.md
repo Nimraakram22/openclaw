@@ -165,3 +165,14 @@ Telegraph style. Root rules only. Read scoped `AGENTS.md` before subtree work.
 - Connection/provider additions: update all UI surfaces + docs + status/config forms.
 - Provider tool schemas: prefer flat string enum helpers over `Type.Union([Type.Literal(...)])`; some providers reject `anyOf`. Not a repo-wide protocol/schema ban.
 - External messaging: no token-delta channel messages. Follow `docs/concepts/streaming.md`; preview/block streaming uses edits/chunks and preserves final/fallback delivery.
+
+## GitHub labeling rules
+
+When applying `channel:` labels to PRs or issues:
+
+- If the change affects **all channels** or **more than 3 individual channels**,
+  apply only `channel: ALL` — do NOT stack every individual `channel:` label.
+- If the change is channel-specific (e.g. only touches `extensions/discord/**`),
+  apply only that specific label (e.g. `channel: discord`).
+
+This keeps label lists readable on mobile (see #12759).

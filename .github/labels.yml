@@ -1,0 +1,3 @@
+- name: "channel: ALL"
+  color: "0075ca"
+  description: "Applies to all channels — use instead of stacking individual channel labels"

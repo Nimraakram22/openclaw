@@ -1,3 +1,28 @@
+"channel: ALL":
+  - changed-files:
+      - any-glob-to-any-file:
+          - "extensions/bluebubbles/**"
+          - "extensions/discord/**"
+          - "extensions/irc/**"
+          - "extensions/feishu/**"
+          - "extensions/googlechat/**"
+          - "extensions/imessage/**"
+          - "extensions/line/**"
+          - "extensions/matrix/**"
+          - "extensions/mattermost/**"
+          - "extensions/msteams/**"
+          - "extensions/nextcloud-talk/**"
+          - "extensions/nostr/**"
+          - "extensions/signal/**"
+          - "extensions/slack/**"
+          - "extensions/telegram/**"
+          - "extensions/whatsapp/**"
+          - "extensions/zalo/**"
+          - "src/channels/**"
+          - "src/gateway/channel*.ts"
+
+
+
 "channel: bluebubbles":
   - changed-files:
       - any-glob-to-any-file:
