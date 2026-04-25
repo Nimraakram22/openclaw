@@ -7,27 +7,16 @@ on:
 jobs:
   exclusive-channel-label:
     runs-on: ubuntu-latest
-    if: ${{ github.event.label.name == 'channel: ALL' }}
     steps:
-      - name: Remove individual channel labels when channel:ALL is applied
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Check and remove individual channel labels
         uses: actions/github-script@v7
+        env:
+          LABEL_NAME: ${{ github.event.label.name }}
         with:
           script: |
-            const { data: labels } = await github.rest.issues.listLabelsOnIssue({
-              owner: context.repo.owner,
-              repo: context.repo.repo,
-              issue_number: context.payload.pull_request.number,
-            });
-
-            const channelLabels = labels
-              .map(l => l.name)
-              .filter(n => n.startsWith('channel: ') && n !== 'channel: ALL');
-
-            for (const label of channelLabels) {
-              await github.rest.issues.removeLabel({
-                owner: context.repo.owner,
-                repo: context.repo.repo,
-                issue_number: context.payload.pull_request.number,
-                name: label,
-              });
-            }
+            if (process.env.LABEL_NAME !== 'channel: ALL') return;
+            const fn = require('./.github/scripts/remove-channel-labels.js');
+            await fn({ github, context });
