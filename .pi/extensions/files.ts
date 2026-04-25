@@ -92,7 +92,7 @@ export default function (pi: ExtensionAPI) {
       }
 
       // Sort by most recent first
-      const files = Array.from(fileMap.values()).toSorted(
+      const files = Array.from(fileMap.values()).slice().sort(
         (a, b) => b.lastTimestamp - a.lastTimestamp,
       );
 
