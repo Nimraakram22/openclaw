@@ -21,11 +21,12 @@ import {
   recordHookInstall,
   recordPluginInstall,
   resetPluginsCliTestState,
+  replaceConfigFile,
   runPluginsCommand,
   runtimeErrors,
   runtimeLogs,
   writeConfigFile,
-  writePersistedPluginInstallLedger,
+  writePersistedInstalledPluginIndexInstallRecords,
 } from "./plugins-cli-test-helpers.js";
 
 const CLI_STATE_ROOT = "/tmp/openclaw-state";
@@ -290,7 +291,7 @@ describe("plugins cli install", () => {
     expect(writeConfigFile).not.toHaveBeenCalled();
   });
 
-  it("installs marketplace plugins and persists install ledger", async () => {
+  it("installs marketplace plugins and persists plugin index", async () => {
     const cfg = {
       plugins: {
         entries: {},
@@ -329,13 +330,19 @@ describe("plugins cli install", () => {
     await runPluginsCommand(["plugins", "install", "alpha", "--marketplace", "local/repo"]);
 
     expect(clearPluginManifestRegistryCache).toHaveBeenCalledTimes(1);
-    expect(writePersistedPluginInstallLedger).toHaveBeenCalledWith({
+    expect(writePersistedInstalledPluginIndexInstallRecords).toHaveBeenCalledWith({
       alpha: expect.objectContaining({
         source: "marketplace",
         installPath: cliInstallPath("alpha"),
       }),
     });
     expect(writeConfigFile).toHaveBeenCalledWith(enabledCfg);
+    expect(replaceConfigFile).toHaveBeenCalledWith(
+      expect.objectContaining({
+        baseHash: "mock",
+        nextConfig: enabledCfg,
+      }),
+    );
     expect(runtimeLogs.some((line) => line.includes("slot adjusted"))).toBe(true);
     expect(runtimeLogs.some((line) => line.includes("Installed plugin: alpha"))).toBe(true);
   });
@@ -384,7 +391,7 @@ describe("plugins cli install", () => {
         spec: "clawhub:demo",
       }),
     );
-    expect(writePersistedPluginInstallLedger).toHaveBeenCalledWith({
+    expect(writePersistedInstalledPluginIndexInstallRecords).toHaveBeenCalledWith({
       demo: expect.objectContaining({
         source: "clawhub",
         spec: "clawhub:demo@1.2.3",
@@ -464,7 +471,7 @@ describe("plugins cli install", () => {
       }),
     );
     expect(installPluginFromNpmSpec).not.toHaveBeenCalled();
-    expect(writePersistedPluginInstallLedger).toHaveBeenCalledWith({
+    expect(writePersistedInstalledPluginIndexInstallRecords).toHaveBeenCalledWith({
       demo: expect.objectContaining({
         source: "clawhub",
         spec: "clawhub:demo@1.2.3",

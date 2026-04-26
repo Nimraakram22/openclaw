@@ -18,6 +18,7 @@ export type DiagnosticUsageEvent = DiagnosticBaseEvent & {
   sessionKey?: string;
   sessionId?: string;
   channel?: string;
+  agentId?: string;
   provider?: string;
   model?: string;
   usage: {
@@ -255,6 +256,47 @@ export type DiagnosticRunCompletedEvent = DiagnosticRunBaseEvent & {
   errorCategory?: string;
 };
 
+export type DiagnosticHarnessRunPhase = "prepare" | "start" | "send" | "resolve" | "cleanup";
+export type DiagnosticHarnessRunOutcome = "completed" | "aborted" | "timed_out" | "error";
+
+type DiagnosticHarnessRunBaseEvent = DiagnosticBaseEvent & {
+  type: "harness.run.started" | "harness.run.completed" | "harness.run.error";
+  runId: string;
+  sessionKey?: string;
+  sessionId?: string;
+  provider?: string;
+  model?: string;
+  trigger?: string;
+  channel?: string;
+  harnessId: string;
+  pluginId?: string;
+};
+
+export type DiagnosticHarnessRunStartedEvent = DiagnosticHarnessRunBaseEvent & {
+  type: "harness.run.started";
+};
+
+export type DiagnosticHarnessRunCompletedEvent = DiagnosticHarnessRunBaseEvent & {
+  type: "harness.run.completed";
+  durationMs: number;
+  outcome: DiagnosticHarnessRunOutcome;
+  resultClassification?: "empty" | "reasoning-only" | "planning-only";
+  yieldDetected?: boolean;
+  itemLifecycle?: {
+    startedCount: number;
+    completedCount: number;
+    activeCount: number;
+  };
+};
+
+export type DiagnosticHarnessRunErrorEvent = DiagnosticHarnessRunBaseEvent & {
+  type: "harness.run.error";
+  durationMs: number;
+  phase: DiagnosticHarnessRunPhase;
+  errorCategory: string;
+  cleanupFailed?: boolean;
+};
+
 type DiagnosticModelCallBaseEvent = DiagnosticBaseEvent & {
   type: "model.call.started" | "model.call.completed" | "model.call.error";
   runId: string;
@@ -352,6 +394,22 @@ export type DiagnosticLogRecordEvent = DiagnosticBaseEvent & {
   };
 };
 
+export type DiagnosticTelemetryExporterEvent = DiagnosticBaseEvent & {
+  type: "telemetry.exporter";
+  exporter: string;
+  signal: "traces" | "metrics" | "logs";
+  status: "started" | "failure" | "dropped";
+  reason?:
+    | "configured"
+    | "emit_failed"
+    | "handler_failed"
+    | "queue_full"
+    | "shutdown_failed"
+    | "start_failed"
+    | "unsupported_protocol";
+  errorCategory?: string;
+};
+
 export type DiagnosticEventPayload =
   | DiagnosticUsageEvent
   | DiagnosticWebhookReceivedEvent
@@ -375,6 +433,9 @@ export type DiagnosticEventPayload =
   | DiagnosticExecProcessCompletedEvent
   | DiagnosticRunStartedEvent
   | DiagnosticRunCompletedEvent
+  | DiagnosticHarnessRunStartedEvent
+  | DiagnosticHarnessRunCompletedEvent
+  | DiagnosticHarnessRunErrorEvent
   | DiagnosticModelCallStartedEvent
   | DiagnosticModelCallCompletedEvent
   | DiagnosticModelCallErrorEvent
@@ -382,7 +443,8 @@ export type DiagnosticEventPayload =
   | DiagnosticMemorySampleEvent
   | DiagnosticMemoryPressureEvent
   | DiagnosticPayloadLargeEvent
-  | DiagnosticLogRecordEvent;
+  | DiagnosticLogRecordEvent
+  | DiagnosticTelemetryExporterEvent;
 
 export type DiagnosticEventInput = DiagnosticEventPayload extends infer Event
   ? Event extends DiagnosticEventPayload
@@ -428,6 +490,9 @@ const ASYNC_DIAGNOSTIC_EVENT_TYPES = new Set<DiagnosticEventPayload["type"]>([
   "model.call.started",
   "model.call.completed",
   "model.call.error",
+  "harness.run.started",
+  "harness.run.completed",
+  "harness.run.error",
   "context.assembled",
   "log.record",
 ]);
