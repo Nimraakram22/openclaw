@@ -20,7 +20,7 @@ type CustomUiContext = {
         kb: unknown,
         done: () => void,
       ) => {
-        render: (width: number) => string;
+        render: (width: number) => string[];
         invalidate: () => void;
         handleInput: (data: string) => void;
       },
@@ -63,10 +63,7 @@ export async function showPagedSelectList(params: {
     container.addChild(new DynamicBorder((s: string) => theme.fg("accent", s)));
  
     return {
-      render: (width) => {
-        const result = container.render(width);
-        return Array.isArray(result) ? result.join("\n") : result;
-      },
+      render: (width) => container.render(width),
       invalidate: () => container.invalidate(),
       handleInput: (data) => {
         if (matchesKey(data, Key.left)) {
